@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>俄羅斯方塊</title>
+    <title>Miya俄羅斯方塊</title>
     <style>
         body {
             margin: 0;
@@ -212,12 +212,33 @@
                 display: block;
             }
         }
+
+        @keyframes flash {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes collapse {
+            0% { transform: scaleY(1); }
+            100% { transform: scaleY(0); }
+        }
+
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        .title-highlight {
+            color: #ffcc00;
+            text-shadow: 0 0 10px rgba(255, 204, 0, 0.7);
+        }
     </style>
 </head>
 <body>
     <div class="game-container">
         <div class="header">
-            <h1>俄羅斯方塊</h1>
+            <h1><span class="title-highlight">Miya</span>俄羅斯方塊</h1>
         </div>
         
         <div class="game-area">
@@ -290,6 +311,7 @@
             let isPaused = false;
             let dropStart = Date.now();
             let gameStarted = false;
+            let animatingLines = false;
             
             // 方塊顏色
             const COLORS = [
@@ -380,6 +402,8 @@
                 
                 // 向下移動
                 moveDown() {
+                    if (animatingLines) return false;
+                    
                     if (!this.collision(0, 1, this.shape)) {
                         this.unDraw();
                         this.y++;
@@ -387,14 +411,18 @@
                         return true;
                     }
                     this.lock();
-                    currentPiece = nextPiece;
-                    nextPiece = randomPiece();
-                    drawNextPiece();
+                    if (!gameOver) {
+                        currentPiece = nextPiece;
+                        nextPiece = randomPiece();
+                        drawNextPiece();
+                    }
                     return false;
                 }
                 
                 // 向左移動
                 moveLeft() {
+                    if (animatingLines) return;
+                    
                     if (!this.collision(-1, 0, this.shape)) {
                         this.unDraw();
                         this.x--;
@@ -404,6 +432,8 @@
                 
                 // 向右移動
                 moveRight() {
+                    if (animatingLines) return;
+                    
                     if (!this.collision(1, 0, this.shape)) {
                         this.unDraw();
                         this.x++;
@@ -413,6 +443,8 @@
                 
                 // 旋轉方塊
                 rotate() {
+                    if (animatingLines) return;
+                    
                     let nextPattern = [];
                     for (let r = 0; r < this.shape.length; r++) {
                         nextPattern[r] = [];
@@ -430,6 +462,8 @@
                 
                 // 直接落下
                 hardDrop() {
+                    if (animatingLines) return;
+                    
                     while (this.moveDown()) {}
                 }
                 
@@ -479,7 +513,7 @@
                     }
                     
                     // 檢查是否有完整的行
-                    let linesCleared = 0;
+                    let fullRows = [];
                     for (let r = 0; r < ROWS; r++) {
                         let isRowFull = true;
                         for (let c = 0; c < COLS; c++) {
@@ -490,33 +524,148 @@
                         }
                         
                         if (isRowFull) {
-                            // 移除該行並在頂部添加一個新行
-                            for (let y = r; y > 0; y--) {
-                                for (let c = 0; c < COLS; c++) {
-                                    board[y][c] = board[y-1][c];
-                                }
-                            }
-                            
-                            // 頂部行設為空
-                            for (let c = 0; c < COLS; c++) {
-                                board[0][c] = EMPTY;
-                            }
-                            
-                            linesCleared++;
+                            fullRows.push(r);
                         }
                     }
                     
-                    // 更新分數
-                    if (linesCleared > 0) {
-                        // 計分規則: 1行=100, 2行=300, 3行=500, 4行=800
-                        const points = [0, 100, 300, 500, 800];
-                        score += points[linesCleared] * level;
-                        lines += linesCleared;
+                    if (fullRows.length > 0) {
+                        animateAndRemoveRows(fullRows);
+                    }
+                }
+            }
+            
+            // 動畫效果並移除行
+            function animateAndRemoveRows(rows) {
+                animatingLines = true;
+                
+                // 閃爍動畫
+                let flashCount = 0;
+                const maxFlashes = 3;
+                
+                function flash() {
+                    // 繪製閃爍效果
+                    for (let i = 0; i < rows.length; i++) {
+                        const row = rows[i];
+                        for (let c = 0; c < COLS; c++) {
+                            // 交替顯示白色和原始顏色
+                            const color = flashCount % 2 === 0 ? 'white' : board[row][c];
+                            drawBlock(c, row, color);
+                        }
+                    }
+                    
+                    flashCount++;
+                    
+                    if (flashCount < maxFlashes * 2) {
+                        setTimeout(flash, 150);
+                    } else {
+                        // 閃爍結束後，執行壓縮動畫
+                        collapseRows(rows);
+                    }
+                }
+                
+                flash();
+            }
+            
+            // 壓縮並移除行
+            function collapseRows(rows) {
+                // 更新分數
+                const linesCleared = rows.length;
+                // 計分規則: 1行=100, 2行=300, 3行=500, 4行=800
+                const points = [0, 100, 300, 500, 800];
+                score += points[linesCleared] * level;
+                lines += linesCleared;
+                
+                // 每清除10行提升一個等級
+                level = Math.floor(lines / 10) + 1;
+                
+                updateScore();
+                
+                // 創建一個臨時的畫布來繪製壓縮動畫
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // 複製當前遊戲板到臨時畫布
+                tempCtx.drawImage(canvas, 0, 0);
+                
+                // 清除原始畫布
+                ctx.fillStyle = EMPTY;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 動畫持續時間
+                const duration = 300;
+                const startTime = Date.now();
+                
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    
+                    // 清除畫布
+                    ctx.fillStyle = EMPTY;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // 繪製未被移除的行
+                    for (let r = 0; r < ROWS; r++) {
+                        // 檢查當前行是否是要被移除的行
+                        if (rows.includes(r)) {
+                            continue;
+                        }
                         
-                        // 每清除10行提升一個等級
-                        level = Math.floor(lines / 10) + 1;
+                        // 計算新的位置
+                        let newRow = r;
+                        for (let i = 0; i < rows.length; i++) {
+                            if (rows[i] > r) {
+                                continue;
+                            }
+                            newRow++;
+                        }
                         
-                        updateScore();
+                        // 計算動畫中的位置
+                        const targetY = newRow * BLOCK_SIZE;
+                        const sourceY = r * BLOCK_SIZE;
+                        const currentY = sourceY + (targetY - sourceY) * progress;
+                        
+                        // 繪製行
+                        ctx.drawImage(
+                            tempCanvas,
+                            0, sourceY, canvas.width, BLOCK_SIZE,
+                            0, currentY, canvas.width, BLOCK_SIZE
+                        );
+                    }
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        // 動畫結束，更新遊戲板
+                        updateBoardAfterClear(rows);
+                        drawBoard();
+                        animatingLines = false;
+                    }
+                }
+                
+                animate();
+            }
+            
+            // 更新遊戲板數據
+            function updateBoardAfterClear(rows) {
+                // 從下到上排序行，以便正確移動
+                rows.sort((a, b) => b - a);
+                
+                // 移除每一行
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    
+                    // 從被移除的行開始，將上面的所有行下移
+                    for (let r = row; r > 0; r--) {
+                        for (let c = 0; c < COLS; c++) {
+                            board[r][c] = board[r-1][c];
+                        }
+                    }
+                    
+                    // 頂部行設為空
+                    for (let c = 0; c < COLS; c++) {
+                        board[0][c] = EMPTY;
                     }
                 }
             }
@@ -577,6 +726,7 @@
                 level = 1;
                 gameOver = false;
                 isPaused = false;
+                animatingLines = false;
                 updateScore();
                 hideGameOver();
                 
@@ -600,7 +750,7 @@
                 // 根據等級調整下落速度
                 const speed = Math.max(1000 - (level - 1) * 100, 100);
                 
-                if (delta > speed) {
+                if (delta > speed && !animatingLines) {
                     currentPiece.moveDown();
                     dropStart = now;
                 }
@@ -635,7 +785,7 @@
             
             // 按鍵控制
             document.addEventListener('keydown', (e) => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 
                 switch (e.keyCode) {
                     case 37: // 左箭頭
@@ -666,31 +816,31 @@
             
             // 移動端控制
             document.getElementById('mobile-left').addEventListener('click', () => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 currentPiece.moveLeft();
                 dropStart = Date.now();
             });
             
             document.getElementById('mobile-right').addEventListener('click', () => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 currentPiece.moveRight();
                 dropStart = Date.now();
             });
             
             document.getElementById('mobile-rotate').addEventListener('click', () => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 currentPiece.rotate();
                 dropStart = Date.now();
             });
             
             document.getElementById('mobile-down').addEventListener('click', () => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 currentPiece.moveDown();
                 dropStart = Date.now();
             });
             
             document.getElementById('mobile-drop').addEventListener('click', () => {
-                if (gameOver || !gameStarted || isPaused) return;
+                if (gameOver || !gameStarted || isPaused || animatingLines) return;
                 currentPiece.hardDrop();
                 dropStart = Date.now();
             });
@@ -711,5 +861,5 @@
             drawBoard();
         });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'95edbd44616a4a42',t:'MTc1MjQ2MTcwNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'95ee018b23ec8454',t:'MTc1MjQ2NDUwMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
